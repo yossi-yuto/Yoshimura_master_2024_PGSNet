@@ -15,31 +15,37 @@ from segmentation_models_pytorch.losses import DiceLoss, FocalLoss
 from sklearn.metrics import mean_absolute_error
 
 from config import parse_args, create_mirror_dataset
-from metrics import get_maxFscore_and_threshold
-
-from preprocessing import PreProcessing
+from metrics import calc_iou_multi_thresh, get_maxFscore_and_threshold_multi_beta
 
 
 def test_model(model, test_loader, args, result_dir):
     
-    # 損失関数と評価指標の設定
-    metrics_fn = BinaryFBetaScore(beta=0.5)
-    
-    # focal_loss_fn = FocalLoss(mode="binary")
+    focal_loss_fn = FocalLoss(mode="binary")
     dice_loss_fn = DiceLoss(mode="binary")
-    bce_loss_fn = nn.BCEWithLogitsLoss()
-    def compute_loss(output, tgt_mask_torch):
-        return sum([
-            bce_loss_fn(output[i], tgt_mask_torch.cuda()) + dice_loss_fn(output[i], tgt_mask_torch.cuda())
-            for i in range(len(output))
-        ])
+    # bce_loss_fn = nn.BCEWithLogitsLoss()
+    def compute_loss(output_list: list, tgt_mask_torch: torch.Tensor, final_weight: float = 1.0, verbose: bool = False) -> list:
+        losses = []
+        tgt_mask_cuda = tgt_mask_torch.cuda()  
+        for value in output_list:
+            loss = focal_loss_fn(value, tgt_mask_cuda) + dice_loss_fn(value, tgt_mask_cuda)
+            losses.append(loss * final_weight)
+            if verbose:
+                print(f"loss: {loss.item()}") 
+        return losses
     
-    # preprocessing = PreProcessing(grid_size=args.grid_size)
-    
-    val_loss_iter = []
-    val_score_iter = []
-    val_mae_iter = []
-    val_maxFbeta_iter = []
+    loss_list :list = []
+    MAE_list :list = []
+    IoU_list :dict = {
+        "IoU_threshed_01": [],
+        "IoU_threshed_03": [],
+        "IoU_threshed_05": [],
+        "IoU_threshed_07": [],
+    }
+    maxFbeta_list :dict = {
+        "maxFbeta_beta_03": [],
+        "maxFbeta_beta_05": [],
+        "maxFbeta_beta_1": [],
+    }
     
     dir_val_outputs = result_dir
     dir_thresholded_outputs = os.path.join(dir_val_outputs, "thresholded_outputs")
@@ -55,13 +61,35 @@ def test_model(model, test_loader, args, result_dir):
             
             pred = model(tgt_image_torch.cuda(), tgt_aolps_torch.cuda(), tgt_dolps_torch.cuda())
             
-            loss = compute_loss(pred, tgt_mask_torch)
+            loss = compute_loss(pred, tgt_mask_torch.float())
+            loss = sum(loss)
+            loss_list.append(loss.cpu().item())
         
             final_pred = torch.sigmoid(pred[-1]) # final prediction
-            score = metrics_fn(final_pred.float().cpu(), tgt_mask_torch.int())
-            maxFbeta, thres = get_maxFscore_and_threshold(tgt_mask_torch.squeeze().numpy().flatten(), final_pred.flatten().cpu())
-            print(f"Max F-beta Score: {maxFbeta:.5f}, Threshold: {thres:.5f}")
+            print(f"final_pred max value: {final_pred.max().cpu().item():.5f}")
+            
             mae = mean_absolute_error(tgt_mask_torch.cpu().numpy().flatten(), final_pred.cpu().numpy().flatten())
+            MAE_list.append(mae)
+            maxFbetas :dict = get_maxFscore_and_threshold_multi_beta(tgt_mask_torch.squeeze().numpy().flatten(), final_pred.flatten().cpu())
+            maxFbeta_list["maxFbeta_beta_03"].append(maxFbetas[0.3]['max_fscore'])
+            maxFbeta_list["maxFbeta_beta_05"].append(maxFbetas[0.5]['max_fscore'])
+            maxFbeta_list["maxFbeta_beta_1"].append(maxFbetas[1.0]['max_fscore'])
+            IoU_multi_threshed :dict = calc_iou_multi_thresh(tgt_mask_torch.cpu().numpy().flatten(), final_pred.cpu().numpy().flatten(), thresholds=[0.1, 0.3, 0.5, 0.7])
+            IoU_list["IoU_threshed_01"].append(IoU_multi_threshed[0.1])
+            IoU_list["IoU_threshed_03"].append(IoU_multi_threshed[0.3])
+            IoU_list["IoU_threshed_05"].append(IoU_multi_threshed[0.5])
+            IoU_list["IoU_threshed_07"].append(IoU_multi_threshed[0.7])
+            
+            print(f"Loss: {loss:.5f}, MAE: {mae:.5f}")
+            print(f"Max F-beta Scores:")
+            print(f"  - β=0.3: {maxFbetas[0.3]['max_fscore']:.5f}, precision: {maxFbetas[0.3]['precision']:.5f}, recall: {maxFbetas[0.3]['recall']:.5f}")
+            print(f"  - β=0.5: {maxFbetas[0.5]['max_fscore']:.5f}, precision: {maxFbetas[0.5]['precision']:.5f}, recall: {maxFbetas[0.5]['recall']:.5f}")
+            print(f"  - β=1.0: {maxFbetas[1.0]['max_fscore']:.5f}, precision: {maxFbetas[1.0]['precision']:.5f}, recall: {maxFbetas[1.0]['recall']:.5f}")
+            print(f"IoU Scores:")
+            print(f"  - Threshold 0.1: {IoU_multi_threshed[0.1]:.5f}")
+            print(f"  - Threshold 0.3: {IoU_multi_threshed[0.3]:.5f}")
+            print(f"  - Threshold 0.5: {IoU_multi_threshed[0.5]:.5f}")
+            print(f"  - Threshold 0.7: {IoU_multi_threshed[0.7]:.5f}")
             
             tgt_img_path = meta_dict["tgt_image_path"][0]
             tgt_aolp_path = meta_dict["tgt_aolp_path"][0]
@@ -71,13 +99,6 @@ def test_model(model, test_loader, args, result_dir):
             supp_aolp_path = meta_dict["supp_aolp_path"][0]
             supp_dolp_path = meta_dict["supp_dolp_path"][0]
             
-            print("Image path: ", tgt_img_path, "Loss: ", round(loss.item(), 3), "Score: ", round(score.item(), 3), "MAE: ", round(mae, 3))
-            val_loss_iter.append(loss.item())
-            val_score_iter.append(score.item())
-            val_mae_iter.append(mae)
-            val_maxFbeta_iter.append(maxFbeta)
-            
-            # Save predicted mask
             tgt_rgb_img = Image.open(tgt_img_path).convert('RGB')
             tgt_aolp_img = Image.open(tgt_aolp_path).convert('RGB')
             tgt_dolp_img = Image.open(tgt_dolp_path).convert('RGB')
@@ -89,17 +110,15 @@ def test_model(model, test_loader, args, result_dir):
             pred_masks = [torch.sigmoid(p.cpu()) for p in pred]
             pred_masks_resized = [transforms.Resize((h, w))(p) for p in pred_masks]
             
-            # Apply threshold to visualize binary prediction
-            thresholded_pred = (final_pred.cpu() > thres).float()
+            thresholded_pred = (final_pred.cpu() > maxFbetas[0.3]['threshold']).float()
             thresholded_pred_resized = transforms.Resize((h, w))(thresholded_pred)
             
-            # Save thresholded prediction as an image (0-255) in PNG format
             thresholded_pred_img = (thresholded_pred_resized.numpy() * 255).astype(np.uint8)
             
             base_name = os.path.basename(os.path.abspath(os.path.join(tgt_img_path, "../../")))
             base_name = base_name + "_" + os.path.splitext(os.path.basename(tgt_img_path))[0]
 
-            thresholded_output_path = os.path.join(dir_thresholded_outputs, f"{base_name}_thresholded_{maxFbeta:.3f}.png")
+            thresholded_output_path = os.path.join(dir_thresholded_outputs, f"{base_name}_thresholded_{maxFbetas[0.3]['max_fscore']:.3f}.png")
             Image.fromarray(thresholded_pred_img.squeeze()).save(thresholded_output_path)
                     
             # サブプロットを作成
@@ -157,30 +176,37 @@ def test_model(model, test_loader, args, result_dir):
             for ax in axes[start_idx + len(pred_masks_resized) + 1:]:
                 ax.axis('off')
 
-            # 図全体のタイトルを設定
-            plt.suptitle(f"Max F-beta: {maxFbeta:.3f}, Thres: {thres:.3f}", fontsize=16)
-
-            # レイアウトを調整
+            plt.suptitle(f"Max F-beta: {maxFbetas[0.3]['max_fscore']:.3f}, Thres: { maxFbetas[0.3]['threshold']:.3f}", fontsize=16)
             plt.tight_layout()
             plt.subplots_adjust(top=0.9)  # タイトルとサブプロットが重ならないように
 
             # 画像を保存
-            visualization_output_file = os.path.join(dir_visualization_outputs, f"{base_name}_visualization_{maxFbeta:.3f}.png")
+            visualization_output_file = os.path.join(dir_visualization_outputs, f"{base_name}_visualization_{maxFbetas[0.3]['max_fscore']:.3f}.png")
             plt.savefig(visualization_output_file)
             plt.close()
     
-    # all test data average
-    avg_loss = np.mean(val_loss_iter)
-    avg_score = np.mean(val_score_iter)
-    avg_mae = np.mean(val_mae_iter)
-    avg_maxFbeta = np.mean(val_maxFbeta_iter)
-    print(f"\nAverage Test Loss: {avg_loss:.5f}, Average Test Score: {avg_score:.5f}, Average MAE: {avg_mae:.5f}, Average Max F-beta: {avg_maxFbeta:.5f}")
-
+    avg_loss = np.mean(loss_list) if loss_list else 0.0
+    avg_mae = np.mean(MAE_list) if MAE_list else 0.0
+    avg_IoU :dict = {key: np.mean(values) if values else 0.0 for key, values in IoU_list.items()}
+    avg_maxFbeta :dict  = {key: np.mean(values) if values else 0.0 for key, values in maxFbeta_list.items()}
+    print(f"Average Loss: {avg_loss:.5f}")
+    print(f"Average MAE: {avg_mae:.5f}")
+    print("Average IoU Scores:")
+    for key, value in avg_IoU.items():
+        print(f"  - {key}: {value:.5f}")
+    print("Average Max F-beta Scores:")
+    for key, value in avg_maxFbeta.items():
+        print(f"  - {key}: {value:.5f}")
+    
     with open(results_txt_path, "w") as f:
         f.write(f"Average Test Loss: {avg_loss:.5f}\n")
-        f.write(f"Average Test Score: {avg_score:.5f}\n")
         f.write(f"Average MAE: {avg_mae:.5f}\n")
-        f.write(f"Average Max F-beta: {avg_maxFbeta:.5f}\n")
+        f.write("Average IoU Scores:\n")
+        for key, value in avg_IoU.items():
+            f.write(f"  - {key}: {value:.5f}\n")
+        f.write("Average Max F-beta Scores:\n")
+        for key, value in avg_maxFbeta.items():
+            f.write(f"  - {key}: {value:.5f}\n")
 
 
 def main():
@@ -205,9 +231,9 @@ def main():
     # Test the model
     for d_type, loader in data_type.items():
         print("which train validation or test -> ", d_type)
-        # if d_type != "test":
-        #     print("Skip train and validation.")
-        #     continue
+        if d_type != "test":
+            print("Skip train and validation.")
+            continue
         result_dir = os.path.join(args.result_dir, d_type + "_outputs")
         test_model(model, loader, args, result_dir)
 
