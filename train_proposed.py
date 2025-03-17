@@ -84,7 +84,7 @@ def main():
 
     elif args.phase == 2:
         """ conformer 事前学習済み """
-        imagenet_pretraind_conformer = "/data2/yoshimura/mirror_detection/PGSNet/pretrain_param/Conformer_base_patch16.pth"
+        imagenet_pretraind_conformer = "./pretrain_param/Conformer_base_patch16.pth"
         print("Loading Conformer pretrained model...", imagenet_pretraind_conformer)
         model.conformer1.load_state_dict(torch.load(imagenet_pretraind_conformer, weights_only = True))
         model.conformer2.load_state_dict(torch.load(imagenet_pretraind_conformer, weights_only = True))

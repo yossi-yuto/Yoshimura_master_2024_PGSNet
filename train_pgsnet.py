@@ -58,7 +58,7 @@ def main():
             torch.nn.init.xavier_normal_(layer.weight)
     
     # encoder freeze
-    pretrained_param_path = "/data2/yoshimura/mirror_detection/PGSNet/pretrain_param/Conformer_base_patch16.pth"
+    pretrained_param_path = "./pretrain_param/Conformer_base_patch16.pth"
     model.conformer1.load_state_dict(torch.load(pretrained_param_path, weights_only=True), strict=False)
     model.conformer2.load_state_dict(torch.load(pretrained_param_path, weights_only=True), strict=False)
     model.conformer3.load_state_dict(torch.load(pretrained_param_path, weights_only=True), strict=False)
