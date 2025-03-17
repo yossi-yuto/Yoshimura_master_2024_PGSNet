@@ -7,7 +7,6 @@ import cv2
 import imageio
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
-# import seaborn as sns
 
 import matplotlib.pyplot as plt
 
