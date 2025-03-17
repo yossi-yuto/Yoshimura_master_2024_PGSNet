@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 
 from dataset import VideoDataset
-from yvos_dataloader import dataLoader_5fps
 from dataset_VMD import VMD_Dataset
 from dataset_PMD import PMD_Dataset
 
@@ -85,7 +84,7 @@ def create_mirror_dataset(args):
             print(f"Test dataset ({mirror_type}): {len(test_set)} samples")
         else:
             # トレーニングおよび検証データセットの準備
-            train_set = VideoDataset(dataset_path, train_mode=True)
+            train_set = VideoDataset(dataset_path, train_mode=False)
             # トレーニングと検証データの分割
             train_size, val_size = getTrainTestCounts(train_set)
             train_dataset, val_dataset = torch.utils.data.random_split(
@@ -111,19 +110,6 @@ def create_mirror_dataset(args):
 
     return train_loader, val_loader, test_loader
 
-
-def yvos_dataloader(args):
-    JPEGtrain_5fps = '/data2/yoshimura/mirror_detection/DATA/train/JPEGImages/'
-    Anntrain_5fps = '/data2/yoshimura/mirror_detection/DATA/train/Annotations/'
-    json_path = '/data2/yoshimura/mirror_detection/DATA/train/meta.json'
-    with open('/data2/yoshimura/mirror_detection/DATA/train/class_id_dict.json', 'r') as json_file:
-        class_id_dict = json.load(json_file)
-        
-    dataset = dataLoader_5fps(JPEGtrain_5fps, Anntrain_5fps, json_path, class_id_dict=class_id_dict)
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset)*0.9), len(dataset)-int(len(dataset)*0.9)], generator=torch.Generator().manual_seed(42))
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1, num_workers=0, pin_memory=True)
-    return train_loader, val_loader, None
 
 def create_RGBmirror_dataset(dataset_name: str, args):
     if dataset_name == "VMD":
@@ -155,7 +141,7 @@ def get_dataloader(dataset: Dataset, batch_size: int = 32) -> DataLoader:
     return train_loader, val_loader
 
 def getTrainTestCounts(dataset: Dataset) -> tuple:
-    train_size = int(dataset.__len__() * 0.95) 
+    train_size = int(dataset.__len__() * 0.8) 
     val_size   = dataset.__len__() - train_size
     return train_size, val_size
 
