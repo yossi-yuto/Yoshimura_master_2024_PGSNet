@@ -128,9 +128,8 @@ def test_model(model, test_loader, args, result_dir):
 
             fig, axes = plt.subplots(row, col, figsize=(8, 12))
             fig.set_dpi(300)
-            axes = axes.flatten()  # 1次元配列に変換
+            axes = axes.flatten()  
 
-            # 最初の画像をプロット
             axes[0].imshow(tgt_rgb_img)
             axes[0].set_title("RGB Image")
             axes[0].axis('off')
