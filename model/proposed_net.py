@@ -974,43 +974,33 @@ class Network(nn.Module):
             if isinstance(m, nn.ReLU):
                 m.inplace = True
 
-    # @autocast()
     def forward(self, image: tuple, aolps: tuple, dolps: tuple) -> dict:
-        # image, aolp, dolp: [batch_size, channel=3, h, w]
-        
-        '''  phase1 '''
+        '''  RGB '''
         image_conv_features, image_tran_features = self.conformer1(image[0])
-
-        pred_based_rgb_opflow = self.cross_attention_module_rgb(image[1], image[2], image[3]) # query featmap, support featmap, opflow
-        # image_layer0 = image_conv_features[0]  # [-1, 256, h/4, w/4]
+        pred_based_rgb_opflow = self.cross_attention_module_rgb(image[2], image[1], image[3]) # query featmap, support featmap, opflow
         image_layer1 = image_conv_features[3]  # [-1, 256, h/4, w/4]
         image_layer2 = image_conv_features[7]  # [-1, 512, h/8, w/8]
         image_layer3 = image_conv_features[10]  # [-1, 1024, h/16, w/16]
         image_layer4 = image_conv_features[11]  # [-1, 1024, h/32, w/32]
-        
-        # transformer
-        image_t0 = image_tran_features[0]  # [-1, (h/16)^2+1, 384] 384-->577
-        image_t1 = image_tran_features[3]  # [-1, (h/16)^2+1, 384]
-        image_t2 = image_tran_features[7]  # [-1, (h/16)^2+1, 384]
-        image_t3 = image_tran_features[10]  # [-1, (h/16)^2+1, 384]
+        # image_t0 = image_tran_features[0]  # [-1, (h/16)^2+1, 384] 384-->577
+        # image_t1 = image_tran_features[3]  # [-1, (h/16)^2+1, 384]
+        # image_t2 = image_tran_features[7]  # [-1, (h/16)^2+1, 384]
+        # image_t3 = image_tran_features[10]  # [-1, (h/16)^2+1, 384]
         image_t4 = image_tran_features[11]  # [-1, (h/16)^2+1, 384]
-        
         # channel reduction
         image_cr4 = self.image_cr4(image_layer4)
         image_cr3 = self.image_cr3(image_layer3)
         image_cr2 = self.image_cr2(image_layer2)
         image_cr1 = self.image_cr1(image_layer1)
-        
-        
         # predict
         predict_c1 = self.predict_c1(image_cr4)
         predict_t1 = self.predict_t1(image_t4)
         predict_c1 = F.interpolate(predict_c1, size=image[0].size()[2:], mode='bilinear', align_corners=True)
         predict_t1 = F.interpolate(predict_t1, size=image[0].size()[2:], mode='bilinear', align_corners=True)
 
-        ''' phase 2'''
+        ''' AoLP '''
         early_fusion_aolp = self.early_fusion_aolp(aolps[0])
-        pred_based_aolp_opflow = self.cross_attention_module_aolp(aolps[1], aolps[2], aolps[3]) # query featmap, support featmap, opflow
+        pred_based_aolp_opflow = self.cross_attention_module_aolp(aolps[2], aolps[1], aolps[3]) # query featmap, support featmap, opflow
         aolp_conv_features, aolp_tran_features = self.conformer2(early_fusion_aolp)
         # aolp_layer0 = aolp_conv_features[0]  # [-1, 256, h/4, w/4]
         # aolp_layer1 = aolp_conv_features[3]  # [-1, 256, h/4, w/4]
@@ -1023,16 +1013,14 @@ class Network(nn.Module):
         # aolp_t3 = aolp_tran_features[10]  # [-1, (h/16)^2+1, 384]
         aolp_t4 = aolp_tran_features[11]  # [-1, (h/16)^2+1, 384]
         aolp_cr4 = self.aolp_cr4(aolp_layer4)
-        
         predict_c2 = self.predict_c2(aolp_cr4)
         predict_t2 = self.predict_t2(aolp_t4)
-        
         predict_c2 = F.interpolate(predict_c2, size=image[0].size()[2:], mode='bilinear', align_corners=True)
         predict_t2 = F.interpolate(predict_t2, size=image[0].size()[2:], mode='bilinear', align_corners=True)
     
-        ''' phase3 '''
+        ''' DoLP '''
         early_fusion_dolp = self.early_fusion_dolp(dolps[0])
-        pred_based_dolp_opflow = self.cross_attention_module_dolp(dolps[1], dolps[2], dolps[3]) # query featmap, support featmap, opflow
+        pred_based_dolp_opflow = self.cross_attention_module_dolp(dolps[2], dolps[1], dolps[3]) 
         dolp_conv_features, dolp_tran_features = self.conformer3(early_fusion_dolp)
         # dolp_layer0 = dolp_conv_features[0]  # [-1, 256, h/4, w/4]
         # dolp_layer1 = dolp_conv_features[3]  # [-1, 256, h/4, w/4]
@@ -1045,21 +1033,21 @@ class Network(nn.Module):
         # dolp_t3 = dolp_tran_features[10]  # [-1, (h/16)^2+1, 384]
         dolp_t4 = dolp_tran_features[11]  # [-1, (h/16)^2+1, 384]
         dolp_cr4 = self.dolp_cr4(dolp_layer4)
-        
-
         predict_c3 = self.predict_c3(dolp_cr4)
         predict_t3 = self.predict_t3(dolp_t4)
-
         predict_c3 = F.interpolate(predict_c3, size=image[0].size()[2:], mode='bilinear', align_corners=True)
         predict_t3 = F.interpolate(predict_t3, size=image[0].size()[2:], mode='bilinear', align_corners=True)
-            
-        # fusion t
+        
+        # GCG module
         fusion_t = self.fusion_t(image_t4, aolp_t4, dolp_t4)
 
-        # fusion c
-        image_cr4 = image_cr4 + F.interpolate(pred_based_rgb_opflow, size=image_cr4.size()[2:], mode='bilinear', align_corners=True)
-        aolp_cr4 = aolp_cr4 + F.interpolate(pred_based_aolp_opflow, size=aolp_cr4.size()[2:], mode='bilinear', align_corners=True)
-        dolp_cr4 = dolp_cr4 + F.interpolate(pred_based_dolp_opflow, size=dolp_cr4.size()[2:], mode='bilinear', align_corners=True)
+        # Optical attention module
+        resize4_rbg_cross = F.interpolate(pred_based_rgb_opflow, size=image_cr4.size()[2:], mode='bilinear', align_corners=True)
+        resize4_aolp_cross = F.interpolate(pred_based_aolp_opflow, size=aolp_cr4.size()[2:], mode='bilinear', align_corners=True)
+        resize4_dolp_cross = F.interpolate(pred_based_dolp_opflow, size=dolp_cr4.size()[2:], mode='bilinear', align_corners=True)
+        image_cr4 = image_cr4 + resize4_rbg_cross
+        aolp_cr4 = aolp_cr4 + resize4_aolp_cross
+        dolp_cr4 = dolp_cr4 + resize4_dolp_cross
         fusion_c = self.fusion_c(image_cr4, aolp_cr4, dolp_cr4, image_t4, aolp_t4, dolp_t4)
 
         # msdp
@@ -1069,17 +1057,21 @@ class Network(nn.Module):
         ga4 = self.ga4(msdp, fusion_t)
 
         # 3
-        image_cr3 = image_cr3 + F.interpolate(pred_based_rgb_opflow, size=image_cr3.size()[2:], mode='bilinear', align_corners=True)
+        resize3_rbg_cross = F.interpolate(pred_based_rgb_opflow, size=image_cr3.size()[2:], mode='bilinear', align_corners=True)
+        
+        image_cr3 = image_cr3 + resize3_rbg_cross
         decoder43 = self.decoder43(ga4, image_cr3)
         ga3 = self.ga3(decoder43, fusion_t)
 
         # 2
-        image_cr2 = image_cr2 + F.interpolate(pred_based_rgb_opflow, size=image_cr2.size()[2:], mode='bilinear', align_corners=True)
+        resize2_rbg_cross = F.interpolate(pred_based_rgb_opflow, size=image_cr2.size()[2:], mode='bilinear', align_corners=True)    
+        image_cr2 = image_cr2 + resize2_rbg_cross
         decoder32 = self.decoder32(ga3, image_cr2)
         ga2 = self.ga2(decoder32, fusion_t)
 
         # 1
-        image_cr1 = image_cr1 + F.interpolate(pred_based_rgb_opflow, size=image_cr1.size()[2:], mode='bilinear', align_corners=True)
+        resize1_rbg_cross = F.interpolate(pred_based_rgb_opflow, size=image_cr1.size()[2:], mode='bilinear', align_corners=True)
+        image_cr1 = image_cr1 + resize1_rbg_cross
         decoder21 = self.decoder21(ga2, image_cr1)
         ga1 = self.ga1(decoder21, fusion_t)
 
