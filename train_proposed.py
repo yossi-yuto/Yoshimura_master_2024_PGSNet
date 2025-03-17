@@ -21,7 +21,7 @@ from segmentation_models_pytorch.losses import DiceLoss, FocalLoss
 from loss import DICE_BCE_losses, DiceFocal_losses
 from earlystop import EarlyStopping
 from preprocessing import PreProcessing
-from config import set_seed, parse_args, create_mirror_dataset, yvos_dataloader, create_RGBmirror_dataset
+from config import set_seed, parse_args, create_mirror_dataset
 from metrics import get_maxFscore_and_threshold
 from plot import save_plots, plot_and_save
 from layer_freeze import freeze_out_layer
