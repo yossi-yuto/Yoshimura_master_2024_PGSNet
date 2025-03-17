@@ -1,32 +1,19 @@
 import os
-import math
 import pdb
-from datetime import datetime
-from argparse import ArgumentParser
 import importlib
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import optim
 from tqdm import tqdm
 from torchmetrics.classification import BinaryFBetaScore
 import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
-from torchvision import transforms
-import torch.nn.functional as F
-from segmentation_models_pytorch.losses import DiceLoss, FocalLoss
 
-from loss import DICE_BCE_losses, DiceFocal_losses
 from earlystop import EarlyStopping
-from preprocessing import PreProcessing
 from config import set_seed, parse_args, create_mirror_dataset
 from metrics import get_maxFscore_and_threshold
 from plot import save_plots, plot_and_save
-from layer_freeze import freeze_out_layer
-from model.proposed_net import Network
-
 
 
 def main():
@@ -39,7 +26,7 @@ def main():
     set_seed(args.random_seed)
     
     # データセットの作成
-    train_loader, val_loader, test_loader = create_mirror_dataset(args)
+    train_loader, val_loader, _ = create_mirror_dataset(args)
     
     # 結果保存用ディレクトリの作成
     dir_checkpoint = os.path.join(args.result_dir, "ckpt")
@@ -72,7 +59,6 @@ def main():
             param.requires_grad = True
 
     # loss function
-    # focal_loss_fn = FocalLoss(mode="binary")
     dice_loss_fn = DiceLoss(mode="binary")
     bce_loss_fn = nn.BCEWithLogitsLoss()
     def compute_loss(output, tgt_mask_torch):
@@ -80,7 +66,6 @@ def main():
             bce_loss_fn(output[i], tgt_mask_torch.float().cuda()) + dice_loss_fn(output[i], tgt_mask_torch.cuda())
             for i in range(len(output))
         ])
-
     
     # metrics
     metrics_fn = BinaryFBetaScore(beta=0.5)

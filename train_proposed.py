@@ -1,31 +1,21 @@
 import os
-import math
 import pdb
-from datetime import datetime
-from argparse import ArgumentParser
 import importlib
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import optim
 from tqdm import tqdm
 from torchmetrics.classification import BinaryFBetaScore
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
-from torchvision import transforms
-import torch.nn.functional as F
-from segmentation_models_pytorch.losses import DiceLoss, FocalLoss
 
-from loss import DICE_BCE_losses, DiceFocal_losses
 from earlystop import EarlyStopping
 from preprocessing import PreProcessing
 from config import set_seed, parse_args, create_mirror_dataset
 from metrics import get_maxFscore_and_threshold
 from plot import save_plots, plot_and_save
-from layer_freeze import freeze_out_layer
-from model.proposed_net import Network
 
 
 def main():
@@ -57,16 +47,7 @@ def main():
     dice_loss_fn = DiceLoss(mode="binary")
     bce_loss_fn = nn.BCEWithLogitsLoss()
     
-    # weight init
-    # for layer in model.modules():
-    #     if isinstance(layer, torch.nn.Conv2d):
-    #         torch.nn.init.kaiming_normal_(layer.weight)
-    #     elif isinstance(layer, torch.nn.Linear):
-    #         torch.nn.init.xavier_normal_(layer.weight)
-    
-    # network layer freeze
     if args.phase == 1:
-        # pgs_ckpt_path = os.path.join(dir_checkpoint.replace("/proposed", "/PGS"), "best_weight.pth")
         pgs_ckpt_path = "/data2/yoshimura/mirror_detection/PGSNet/work20250101/results/20250121_seed42/PGS/ash/ckpt/best_weight.pth"
         print("Loading PGSNet pretrained model...", pgs_ckpt_path)
         model.load_state_dict(torch.load(pgs_ckpt_path, weights_only=True), strict=False)
@@ -106,18 +87,6 @@ def main():
             else: 
                 param.requires_grad = True
         
-        # pgs_ckpt_path = os.path.join(dir_checkpoint.replace("/proposed", "/PGS"), "best_weight.pth")
-        # print("Loading PGSNet pretrained model...", pgs_ckpt_path)
-        # model.load_state_dict(torch.load(pgs_ckpt_path, weights_only=True), strict=False)
-        
-        # pretrained_modelからcross_attention_moduleのみのパラメータを読み込む
-        # pretrained_ckpt_path = os.path.join(dir_checkpoint, "best_weight.pth")
-        # cross_attention_module_dict = torch.load(pretrained_ckpt_path, weights_only=True)
-        # for name, param in model.named_parameters():
-        #     if 'cross_attention_module' in name:
-        #         print("Loading layer: ", name)
-        #         param.data = cross_attention_module_dict[name].data
-        
         def compute_loss_phase2(output_dict: dict, tgt_mask_torch: torch.Tensor, epoch: int, final_weight: float = 1.0, verbose: bool = False, ) -> list:
             print("This loss function is for phase 2.")
             sum_loss = 0
@@ -140,7 +109,6 @@ def main():
     else:
         print("Training all layers.")
     
-    
     # metrics
     metrics_fn = BinaryFBetaScore(beta=0.5)
     
@@ -150,8 +118,7 @@ def main():
                         filepath=os.path.join(dir_checkpoint, "best_weight.pth"))
     
     # optimizer
-    # optimizer = optim.Adam(model.parameters(), weight_decay=args.weight_decay)
-    optimizer = optim.AdamW(model.parameters())
+    optimizer = optim.Adam(model.parameters(), weight_decay=args.weight_decay)
     
     # recoder list 
     train_loss_epochs = []
@@ -167,9 +134,8 @@ def main():
         train_loss_iter = []
         train_score_iter = []
         for tgt_image_torch, tgt_aolps_torch, tgt_dolps_torch, tgt_mask_torch, tgt_edge_torch, rgb_frames, aolp_frames, dolp_frames, meta_dict in tqdm(train_loader):
-            # gradient initialization
             optimizer.zero_grad()
-            # preprocessing
+            
             input_rgb = preprocessing.feature_pyramid_extract(rgb_frames.cuda())
             input_aolp = preprocessing.feature_pyramid_extract(aolp_frames.cuda())
             input_dolp = preprocessing.feature_pyramid_extract(dolp_frames.cuda())
@@ -184,14 +150,13 @@ def main():
             losses.backward()
             optimizer.step()
             
-            # recode
             train_loss_iter.append(losses.detach().item())
             train_score_iter.append(metrics_fn(torch.sigmoid(output_dict['AE1']).cpu(), tgt_mask_torch.int()).item())
             
         avg_iter_loss = np.mean(train_loss_iter)
         avg_iter_score = np.mean(train_score_iter)
         print(f"train loss: {avg_iter_loss:.5f}, score: {avg_iter_score:.5f}")
-        # recode 
+
         train_loss_epochs.append(avg_iter_loss)
         train_score_epochs.append(avg_iter_score)
         ''' validation '''
@@ -200,7 +165,7 @@ def main():
         val_score_iter = []
 
         for tgt_image_torch, tgt_aolps_torch, tgt_dolps_torch, tgt_mask_torch, tgt_edge_torch, rgb_frames, aolp_frames, dolp_frames, meta_dict in tqdm(val_loader):
-            # Preprocessing
+
             input_rgb = preprocessing.feature_pyramid_extract(rgb_frames.cuda())
             input_aolp = preprocessing.feature_pyramid_extract(aolp_frames.cuda())
             input_dolp = preprocessing.feature_pyramid_extract(dolp_frames.cuda())
@@ -208,7 +173,6 @@ def main():
             input_aolp = (tgt_aolps_torch.cuda(), input_aolp['query_featmap'], input_aolp['supp_featmap'], input_aolp['opflow_angle_mag'])
             input_dolp = (tgt_dolps_torch.cuda(), input_dolp['query_featmap'], input_dolp['supp_featmap'], input_dolp['opflow_angle_mag'])
 
-            # Forward pass
             with torch.no_grad():
                 output_dict = model(input_rgb, input_aolp, input_dolp)
             
@@ -229,8 +193,7 @@ def main():
             plt.imshow(torch.sigmoid(output_dict['opflow_rgb']).squeeze().cpu().numpy(), cmap='gray')
             plt.title("output mask")
             plt.savefig(os.path.join(dir_val_outputs, f"epoch{epoch}_{filename}"))
-            
-            
+
             # Loss computation
             losses = compute_loss(output_dict, tgt_mask_torch, verbose=True, epoch=epoch)
             score = metrics_fn(torch.sigmoid(output_dict['AE1']).cpu(), tgt_mask_torch.int())
@@ -249,7 +212,6 @@ def main():
         val_score_epochs.append(avg_iter_score)
 
         # Save validation results periodically
-        # if epoch % 5 == 0:
         save_plots(train_loss_epochs, 
                 train_score_epochs,
                 val_loss_epochs,  
@@ -257,7 +219,6 @@ def main():
                 save_path=os.path.join(dir_loss_metrics_graph, f"learning_curve+{args.phase}.png"))
 
         # Early stopping check
-        # es(-avg_iter_score, model)
         es(avg_iter_loss, model)
         if es.early_stop:
             print("Early Stopping.")
