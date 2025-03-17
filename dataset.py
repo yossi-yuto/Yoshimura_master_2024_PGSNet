@@ -40,7 +40,6 @@ class VideoDataset(Dataset):
     def __getitem__(self, idx):
         meta_dict = {}
         
-        # Frame ID
         ano_dir = os.path.join(self.videos[idx], "anotation")
         json_files = glob.glob(os.path.join(ano_dir, "*.json"))
         txt_files = glob.glob(os.path.join(ano_dir, "*.txt"))
@@ -50,19 +49,19 @@ class VideoDataset(Dataset):
 
         json_path = json_files[0]
         txt_path = txt_files[0]
+        
+        # ターゲット画像とソース画像のフレームIDを取得
         tgt_frm_id = os.path.splitext(os.path.basename(json_path))[0].replace("_rgb", "")
         with open(txt_path, "r") as f:
             supp_frm_id = f.read().strip() 
-        
-        # 画像のパス
+        # target image path
         tgt_image_path = os.path.join(self.videos[idx], "RGB", tgt_frm_id + "_rgb.jpg")
         tgt_aolp_path = os.path.join(self.videos[idx], "AoLP", tgt_frm_id + "_aolp.tiff")
         tgt_dolp_path = os.path.join(self.videos[idx], "DoLP", tgt_frm_id + "_dolp.tiff")
         tgt_aolp_vis_path = os.path.join(self.videos[idx], "Visual", tgt_frm_id + "_aolp_crop.jpg")
         tgt_dolp_vis_path = os.path.join(self.videos[idx], "Visual", tgt_frm_id + "_dolp_crop.jpg")
         tgt_mask_path = os.path.join(self.videos[idx], "mask", tgt_frm_id + "_rgb.png")
-        
-        # 補助画像のパス
+        # source image path
         supp_image_path = os.path.join(self.videos[idx], "RGB", supp_frm_id + "_rgb.jpg")
         supp_aolp_vis_path = os.path.join(self.videos[idx], "Visual", supp_frm_id + "_aolp_crop.jpg")
         supp_dolp_vis_path = os.path.join(self.videos[idx], "Visual", supp_frm_id + "_dolp_crop.jpg")
@@ -77,7 +76,7 @@ class VideoDataset(Dataset):
         supp_aolp_vis = Image.open(supp_aolp_vis_path).convert("RGB")
         supp_dolp_vis = Image.open(supp_dolp_vis_path).convert("RGB")
         
-        # input images
+        # image transformation
         input_rgb_transformed = self.img_transform(tgt_image)
         input_mask_transformed = self.mask_transform(mask)
         input_mask_transformed = (input_mask_transformed > 0).to(torch.uint8)
@@ -91,12 +90,12 @@ class VideoDataset(Dataset):
             axis=0
         )
         
-        # input frames
+        # 2 frames
         input_rgb_frames = torch.stack([self.mask_transform(tgt_image), self.mask_transform(supp_image)], dim=0) * 255.0
         input_aolp_frames = torch.stack([self.mask_transform(tgt_aolp_vis), self.mask_transform(supp_aolp_vis)], dim=0) * 255.0
         input_dolp_frames = torch.stack([self.mask_transform(tgt_dolp_vis), self.mask_transform(supp_dolp_vis)], dim=0) * 255.0
         
-        # input edge
+        # target ground truth edge
         tgt_mask = cv2.imread(tgt_mask_path, cv2.IMREAD_GRAYSCALE)  # グレースケールとして読み込む
         tgt_mask = (tgt_mask > 0).astype(np.float32)  # 二値化
         low_threshold, high_threshold = 50, 150  # 任意の値を設定
