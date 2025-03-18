@@ -8,7 +8,7 @@
 ## 鏡面物体データセット
 鏡面物体データセットは，5種類の異なる形状の鏡面を撮影した，RGB画像と，各RGBチャンネルに対応する偏光画像で構成される．本研究では，異なる4方向の偏光素子を内蔵したカラー偏光カメラ[1]を用い，2つの視点から対象の鏡面を撮影した．正解マスク画像は2視点画像ペアのうち，検出対象である視点画像（ターゲット画像）に対してアノテーションが付与されている．本実験では，5種類の鏡面のうち，4種類を学習用，残りの1種類をテストデータとして，PGSNet[2]と提案法を評価した．
 
-- [OneDrive Drive link](https://wakayamauniv-my.sharepoint.com/:u:/g/personal/s246316_wakayama-u_ac_jp/EVg75BuNAQBFmPCt57nmT4UBpTk7rEYgsGz3IDt06p9CAQ?e=Ubx89h)
+- [OneDrive Drive link](https://drive.google.com/drive/folders/1-Z1_ngBneZgS6wBlmV8amAZwiPJiXn56?usp=sharing)
 - データセットの内訳
 
     | 鏡面の種類<br>(フォルダ名)           | 平面鏡<br>(planes) | トレイ<br>(tray) | コップ<br>(cup) | 凸面鏡<br>(sph) | 灰皿<br>（ash） | 合計 |
@@ -17,7 +17,7 @@
 
 
 ## Data structure
-- Google driveにアップロードされたzipファイル（```videos.zip```）を```./VMD```ダウンロードし全て展開する
+- Google driveにアップロードされたzipファイル（```videos.zip```）を```./videos```ダウンロードし全て展開する
 
 
 ```bash
